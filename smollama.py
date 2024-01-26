@@ -1,6 +1,7 @@
 import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
+from tqdm.auto import trange
 
 import torch
 import torch.nn as nn
@@ -321,3 +322,29 @@ def apply_rope(x: torch.Tensor, rope_cache: RoPECache) -> torch.Tensor:
 
     x_out2 = x_out2.flatten(3)
     return x_out2.type_as(x)
+
+
+def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str = "<|startoftext|>", device: str = "cpu"):
+    model.eval()
+
+    input_ids = torch.tensor(tokenizer.encode(starter_text), dtype=torch.long).unsqueeze(0).to(device)
+
+    for _ in trange(num_tokens):
+        logits = model(input_ids)
+
+        if logits.ndim == 2:
+            logits = logits.unsqueeze(0)
+
+        last_token_logits = logits[0, -1, :]
+
+        next_token_id = torch.argmax(last_token_logits).unsqueeze(0)
+
+        input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0)), dim=1)
+
+        if next_token_id.item() == tokenizer.eos_token_id:
+            break
+
+    generated_text = tokenizer.decode(input_ids[0].cpu(), skip_special_tokens=True)
+
+    return generated_text
+
