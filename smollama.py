@@ -338,7 +338,7 @@ def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str =
         last_token_logits = logits[0, -1, :]
 
         # Normalize the logits
-        probabilities = softmax(last_token_logits, dim=-1)
+        probabilities = F.softmax(last_token_logits, dim=-1)
 
         # Sample from the top k tokens
         top_k_probs, top_k_indices = torch.topk(probabilities, top_k, dim=-1)
