@@ -324,12 +324,12 @@ def apply_rope(x: torch.Tensor, rope_cache: RoPECache) -> torch.Tensor:
     return x_out2.type_as(x)
 
 
-def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str = "", device: str = "cpu", top_k: int = 5):
+def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str = "", device: str = "cpu", top_k: int = 5, disable_tqdm: bool = False):
     model.eval()
 
     input_ids = torch.tensor(tokenizer.encode(starter_text), dtype=torch.long).unsqueeze(0).to(device)
 
-    for _ in trange(num_tokens):
+    for _ in trange(num_tokens, disable=disable_tqdm):
         logits = model(input_ids)
 
         if logits.ndim == 2:
