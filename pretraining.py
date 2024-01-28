@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 from transformers import AutoTokenizer, DataCollatorWithPadding, DataCollatorForLanguageModeling
 from datasets import load_dataset
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 
 from smollama import Llama, LLaMAConfig, generate
 
@@ -93,8 +93,13 @@ if __name__ == "__main__":
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
+    batch = next(iter(train_dataloader))
+
     # Training loop
-    for i, batch in enumerate(pbar := tqdm(train_dataloader)):
+    # for i, batch in enumerate(pbar := tqdm(train_dataloader)):
+    table = wandb.Table(columns=["generated_text"])
+
+    for i in (pbar := trange(1000)):
 
         inputs = batch["input_ids"][:-1].to(device)
         labels = batch["labels"][1:].to(device)
@@ -110,15 +115,22 @@ if __name__ == "__main__":
         loss_value = loss.item()
 
         log = {"loss": loss_value}
-
-        if i % 50 == 0:
-            table = wandb.Table(columns=["generated_text"])
-            sample = generate(model, tokenizer, 100, "Once upon a time", device=device, disable_tqdm=True)
-            table.add_data(sample)
-            log["generated_text"] = table
-
         wandb.log(log)
 
+        if i % 50 == 0:
+            sample = generate(model, tokenizer, 100, "Once upon a time", device=device, disable_tqdm=True)
+            table.add_data(sample)
+
+
         pbar.set_description(f"Loss: {loss_value:.4f}")
+
+    final_sample = generate(model, tokenizer, 100, "Once upon a time", device=device, disable_tqdm=False)
+
+    wandb.log({"generated_text": table})
+
+    print("After training: ")
+    print(final_sample)
+
+    wandb.finish()
 
 
