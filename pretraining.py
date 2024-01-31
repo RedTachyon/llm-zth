@@ -16,8 +16,8 @@ from typarse import BaseParser
 
 class Parser(BaseParser):
     device: str = "cpu"
-    batch_size: int = 32
-    lr: float = 5e-5
+    batch_size: int = 8
+    lr: float = 5e-4
 
     _abbrev = {
         "device": "d",
@@ -38,8 +38,8 @@ if __name__ == "__main__":
     device = args.device
 
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-
+    # tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
 
     dataset = load_dataset("roneneldan/TinyStories")
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     config = LLaMAConfig(
         block_size=2048,
-        vocab_size=tokenizer.vocab_size + 1,
+        vocab_size=tokenizer.vocab_size,
         n_layer=8,
         n_head=8,
         n_embd=128,
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     model = model.to(device)
 
     print("Before training: ")
-    print(generate(model, tokenizer, 100, "Once upon a time", device=device))
+    print(generate(model, tokenizer, 100, "<s>One day>", device=device))
 
     count = sum([p.numel() for p in model.parameters()])
     print(f"Number of parameters: {count / 1e6:.1f}M")
@@ -93,19 +93,19 @@ if __name__ == "__main__":
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
-    batch = next(iter(train_dataloader))
-
     # Training loop
-    # for i, batch in enumerate(pbar := tqdm(train_dataloader)):
     table = wandb.Table(columns=["generated_text"])
 
-    for i in (pbar := trange(1000)):
+    for i, batch in enumerate(pbar := tqdm(train_dataloader)):
+        inputs = batch["input_ids"][:, :-1].to(device)
+        labels = batch["labels"][:, 1:].to(device).contiguous()
 
-        inputs = batch["input_ids"][:-1].to(device)
-        labels = batch["labels"][1:].to(device)
+        # inputs = batch["input_ids"].to(device)
+        # labels = batch["labels"].to(device)
+        # attention_mask = batch["attention_mask"].to(device)
 
         logits = model(inputs)
-        loss = loss_fct(logits.view(-1, tokenizer.vocab_size + 64), labels.view(-1))
+        loss = loss_fct(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
 
         # Backward pass and optimization
         optimizer.zero_grad()
@@ -118,13 +118,19 @@ if __name__ == "__main__":
         wandb.log(log)
 
         if i % 50 == 0:
-            sample = generate(model, tokenizer, 100, "Once upon a time", device=device, disable_tqdm=True)
+            sample, tokens = generate(model, tokenizer, 100, "<s>One day", device=device, disable_tqdm=True)
             table.add_data(sample)
-
+            wandb.log({"generated_text": table})
+            if i % 1000 == 0:
+                print(f"Text at step {i}: {sample}")
+                print(f"Tokens at step {i}: {tokens}")
 
         pbar.set_description(f"Loss: {loss_value:.4f}")
 
-    final_sample = generate(model, tokenizer, 100, "Once upon a time", device=device, disable_tqdm=False)
+    final_sample = generate(model, tokenizer, 100, "<s>One day", device=device, disable_tqdm=False)
+
+    # Save model
+    torch.save(model.state_dict(), "models/model.pt")
 
     wandb.log({"generated_text": table})
 

@@ -74,7 +74,7 @@ class Llama(nn.Module):
     def forward(self,
                 idx: torch.Tensor,
                 max_seq_length: Optional[int] = None,
-                input_pos: Optional[torch.Tensor] = None
+                input_pos: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[KVCache]]]:
         B, T = idx.size()
 
@@ -327,7 +327,10 @@ def apply_rope(x: torch.Tensor, rope_cache: RoPECache) -> torch.Tensor:
 def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str = "", device: str = "cpu", top_k: int = 5, disable_tqdm: bool = False):
     model.eval()
 
-    input_ids = torch.tensor(tokenizer.encode(starter_text), dtype=torch.long).unsqueeze(0).to(device)
+    inputs = tokenizer(starter_text, add_special_tokens=False)
+    input_ids = inputs["input_ids"]
+
+    input_ids = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0).to(device)
 
     for _ in trange(num_tokens, disable=disable_tqdm):
         logits = model(input_ids)
@@ -337,19 +340,22 @@ def generate(model: Llama, tokenizer, num_tokens: int = 100, starter_text: str =
 
         last_token_logits = logits[0, -1, :]
 
-        # Normalize the logits
-        probabilities = F.softmax(last_token_logits, dim=-1)
+        # probabilities = F.softmax(last_token_logits, dim=-1)
+        #
+        # top_k_probs, top_k_indices = torch.topk(probabilities, top_k, dim=-1)
+        # next_token_id = top_k_indices[torch.multinomial(top_k_probs, 1)]
+        # input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0)), dim=1)
 
-        # Sample from the top k tokens
-        top_k_probs, top_k_indices = torch.topk(probabilities, top_k, dim=-1)
-        next_token_id = top_k_indices[torch.multinomial(top_k_probs, 1)]
-
-        input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0)), dim=1)
+        # Greedy sampling
+        next_token_id = torch.argmax(last_token_logits, dim=-1)
+        input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=1)
 
         if next_token_id.item() == tokenizer.eos_token_id:
             break
 
-    generated_text = tokenizer.decode(input_ids[0].cpu(), skip_special_tokens=True)
+    tokens = input_ids[0].cpu()
+    generated_text = tokenizer.decode(tokens, skip_special_tokens=False)
 
-    return generated_text
+    model.train()
 
+    return generated_text, tokens
